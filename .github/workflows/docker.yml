@@ -8,6 +8,8 @@ name: Docker
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 env:
   REGISTRY: ghcr.io
@@ -27,6 +29,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      # Get the correct commit SHA (PR head for pull requests, github.sha for pushes)
+      - name: Set commit SHA
+        id: commit
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
 
       # Install the cosign tool
       # https://github.com/sigstore/cosign-installer
@@ -67,7 +79,7 @@ jobs:
           context: .
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.commit.outputs.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -80,7 +92,7 @@ jobs:
       - name: Sign the published Docker image
         env:
           # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
-          TAGS: ${{ steps.meta.outputs.tags }}
+          TAGS: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.commit.outputs.sha }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
         # This step uses the identity token to provision an ephemeral certificate
         # against the sigstore community Fulcio instance.
